@@ -6,34 +6,38 @@ import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 public class HttpServer implements Server {
 
     private final static List<String> validPath = List.of("/index.html", "/spring.svg", "/spring.png", "/resources.html", "/styles.css",
             "/app.js", "/links.html", "/forms.html", "/classic.html", "/events.html", "/events.js");
 
-    private final int port;
+    private final static List<String> allowedMethods = List.of("GET", "POST");
+    // Хранение хендлеров
+    private ConcurrentHashMap<String, ConcurrentHashMap<String, Handler>> allHandlers = new ConcurrentHashMap<>();
+
     private final int threadsCount;
     private final ExecutorService threadPool;
 
 
-    public HttpServer(int port, int threadsCount) {
-        this.port = port;
+    public HttpServer(int threadsCount) {
         this.threadsCount = threadsCount;
         threadPool = Executors.newFixedThreadPool(threadsCount);
     }
 
     @Override
-    public void start() {
-
+    public void listen(int port) {
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             while (true) {
                 System.out.println("Server is listening");
                 Socket socket = serverSocket.accept();
-                threadPool.execute(() -> handle(socket));
+                threadPool.execute(() -> newHandler(socket));
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -41,7 +45,92 @@ public class HttpServer implements Server {
 
     }
 
-    private void handle(Socket socket) {
+    //Метод добавления хендлера
+    public void addHandler(String method, String path, Handler handler) {
+
+        var methodMap = allHandlers.get(method);
+        if (methodMap == null) {
+            methodMap = new ConcurrentHashMap<String, Handler>();
+            methodMap.put(path, handler);
+        }
+        allHandlers.put(method, methodMap);
+    }
+
+    // Парсинг запроса в объект Request
+    private Request requestParse(BufferedReader in) {
+        try (in) {
+            var requestLine = in.readLine().split("\\s+");
+            var method = requestLine[0];
+            var path = requestLine[1];
+
+            var headers = new ArrayList<String>();
+            var line = "";
+            while (!(line = in.readLine()).isEmpty()) {
+                headers.add(line);
+            }
+
+            var body = in.lines().collect(Collectors.joining());
+            if (body.isEmpty()) {
+                return new Request(method, path, headers);
+            }
+            return new Request(method, path, headers, body);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    // Метод для тредпула
+    private void newHandler(Socket socket) {
+        try (var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             var out = new BufferedOutputStream(socket.getOutputStream())) {
+            var request = requestParse(in);
+
+            if (request.getMethod() == null) {
+                badRequest(out);
+                return;
+            }
+
+            if (request.getPath() == null) {
+                notFound(out);
+                return;
+            }
+
+            var handlersMap = allHandlers.get(request.getMethod());
+            var handler = handlersMap.get(request.getPath());
+            handler.handle(request, out);
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private void badRequest(BufferedOutputStream out) throws IOException {
+        try (out) {
+            out.write(("HTTP/1.1 400 Bad Request\r\n" + // Формируем response status line
+                    "Content-lenght: 0\r\n" + // Заголовки. Длина тела 0, статус подключения закрыто
+                    "Connection: close\r\n" +
+                    "\r\n").getBytes());
+            out.flush();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void notFound(BufferedOutputStream out) {
+        try (out) {
+            out.write(("HTTP/1.1 404 Not Found\r\n" + // Формируем response status line
+                    "Content-lenght: 0\r\n" + // Заголовки. Длина тела 0, статус подключения закрыто
+                    "Connection: close\r\n" +
+                    "\r\n").getBytes());
+            out.flush();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    private void oldHandler(Socket socket) {
         try (var out = new BufferedOutputStream(socket.getOutputStream());
              var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              socket) {
