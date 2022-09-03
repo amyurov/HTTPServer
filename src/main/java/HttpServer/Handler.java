@@ -1,5 +1,4 @@
 package HttpServer;
-
 import java.io.BufferedOutputStream;
 
 public interface Handler {

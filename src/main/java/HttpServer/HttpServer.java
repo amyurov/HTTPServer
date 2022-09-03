@@ -8,9 +8,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 public class HttpServer implements Server {
@@ -20,7 +18,7 @@ public class HttpServer implements Server {
 
     private final static List<String> allowedMethods = List.of("GET", "POST");
     // Хранение хендлеров
-    private ConcurrentHashMap<String, ConcurrentHashMap<String, Handler>> allHandlers = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ConcurrentHashMap<String, Handler>> allHandlers = new ConcurrentHashMap<>();
 
     private final int threadsCount;
     private final ExecutorService threadPool;
@@ -47,46 +45,39 @@ public class HttpServer implements Server {
 
     //Метод добавления хендлера
     public void addHandler(String method, String path, Handler handler) {
-
-        var methodMap = allHandlers.get(method);
-        if (methodMap == null) {
-            methodMap = new ConcurrentHashMap<String, Handler>();
-            methodMap.put(path, handler);
+        if (!allHandlers.containsKey(method)) {
+            var methodMap = new ConcurrentHashMap<String, Handler>();
+            allHandlers.put(method, methodMap);
         }
-        allHandlers.put(method, methodMap);
+        allHandlers.get(method).put(path, handler);
     }
 
     // Парсинг запроса в объект Request
-    private Request requestParse(BufferedReader in) {
-        try (in) {
-            var requestLine = in.readLine().split("\\s+");
-            var method = requestLine[0];
-            var path = requestLine[1];
+    private Request requestParse(BufferedReader in) throws IOException {
+        var requestLine = in.readLine().split("\\s+");
+        var method = requestLine[0];
+        var path = requestLine[1];
 
-            var headers = new ArrayList<String>();
-            var line = "";
-            while (!(line = in.readLine()).isEmpty()) {
-                headers.add(line);
-            }
-
-            var body = in.lines().collect(Collectors.joining());
-            if (body.isEmpty()) {
-                return new Request(method, path, headers);
-            }
-            return new Request(method, path, headers, body);
-
-        } catch (IOException e) {
-            e.printStackTrace();
+        var headers = new ArrayList<String>();
+        var line = "";
+        while (!(line = in.readLine()).isEmpty()) {
+            headers.add(line);
         }
-        return null;
+
+        var body = in.lines().collect(Collectors.joining());
+        if (body.isEmpty()) {
+            return new Request(method, path, headers);
+        }
+        return new Request(method, path, headers, body);
     }
 
     // Метод для тредпула
     private void newHandler(Socket socket) {
-        try (var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             var out = new BufferedOutputStream(socket.getOutputStream())) {
+        try {
+            var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             var request = requestParse(in);
-
+            System.out.println(Thread.currentThread().getName() + "Начал обработку " + request.getMethod() + request.getPath());
+            var out = new BufferedOutputStream(socket.getOutputStream());
             if (request.getMethod() == null) {
                 badRequest(out);
                 return;
