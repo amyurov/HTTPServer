@@ -3,9 +3,6 @@ package HttpServer;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
@@ -35,7 +32,7 @@ public class HttpServer implements Server {
             while (true) {
                 System.out.println("Server is listening");
                 Socket socket = serverSocket.accept();
-                threadPool.execute(() -> newHandler(socket));
+               threadPool.execute(() -> connectionHandle(socket));
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -54,9 +51,11 @@ public class HttpServer implements Server {
 
     // Парсинг запроса в объект Request
     private Request requestParse(BufferedReader in) throws IOException {
+
         var requestLine = in.readLine().split("\\s+");
         var method = requestLine[0];
-        var path = requestLine[1];
+        var pathWithFormat = requestLine[1];
+        var path = pathWithFormat.substring(0, pathWithFormat.indexOf("."));
 
         var headers = new ArrayList<String>();
         var line = "";
@@ -64,20 +63,28 @@ public class HttpServer implements Server {
             headers.add(line);
         }
 
-        var body = in.lines().collect(Collectors.joining());
-        if (body.isEmpty()) {
-            return new Request(method, path, headers);
+        if (in.ready()) {
+            var body = in.lines().collect(Collectors.joining());
+            return new Request(method, path, headers, body);
         }
-        return new Request(method, path, headers, body);
+
+        return new Request(method, path, headers);
     }
 
     // Метод для тредпула
-    private void newHandler(Socket socket) {
-        try {
-            var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+    private void connectionHandle(Socket socket) {
+        try (socket;
+             var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             var out = new BufferedOutputStream(socket.getOutputStream())) {
+
+            if(!in.ready()) {
+                badRequest(out);
+                return;
+            }
+
             var request = requestParse(in);
-            System.out.println(Thread.currentThread().getName() + "Начал обработку " + request.getMethod() + request.getPath());
-            var out = new BufferedOutputStream(socket.getOutputStream());
+            System.out.println(Thread.currentThread().getName() + " Начал обработку " + request.getMethod() + request.getPath());
+
             if (request.getMethod() == null) {
                 badRequest(out);
                 return;
@@ -91,6 +98,8 @@ public class HttpServer implements Server {
             var handlersMap = allHandlers.get(request.getMethod());
             var handler = handlersMap.get(request.getPath());
             handler.handle(request, out);
+            System.out.println(Thread.currentThread().getName() + " Закончил обработку " + request.getMethod() + request.getPath());
+            Thread.currentThread().interrupt();
         } catch (IOException ex) {
             ex.printStackTrace();
         }
@@ -103,79 +112,16 @@ public class HttpServer implements Server {
                     "Connection: close\r\n" +
                     "\r\n").getBytes());
             out.flush();
-        } catch (IOException e) {
-            e.printStackTrace();
         }
     }
 
-    private void notFound(BufferedOutputStream out) {
+    private void notFound(BufferedOutputStream out) throws IOException {
         try (out) {
             out.write(("HTTP/1.1 404 Not Found\r\n" + // Формируем response status line
                     "Content-lenght: 0\r\n" + // Заголовки. Длина тела 0, статус подключения закрыто
                     "Connection: close\r\n" +
                     "\r\n").getBytes());
             out.flush();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-    }
-
-    private void oldHandler(Socket socket) {
-        try (var out = new BufferedOutputStream(socket.getOutputStream());
-             var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             socket) {
-
-            final var requestLine = in.readLine(); // Получаем входящую строку
-            final var parts = requestLine.split("\\s+"); // Делим ее по пробелам
-
-            System.out.printf("Поток %s обрабатывает запрос %n, %s%n", Thread.currentThread().getName(), requestLine);
-
-            if (parts.length != 3) {
-                return;
-            }
-
-            final var path = parts[1]; // Проверяем 2й элемент (URL) существует ли у нас такой ресурс, если нет то 404
-            if (!validPath.contains(path)) {
-                out.write(("HTTP/1.1 404 Not Found\r\n" + // Формируем response status line
-                        "Content-lenght: 0\r\n" + // Заголовки. Длина тела 0, статус подключения закрыто
-                        "Connection: close\r\n" +
-                        "\r\n").getBytes());
-                out.flush();
-                System.out.printf("Поток %s отправил ответ %n", Thread.currentThread().getName());
-                return;
-            }
-
-            // Если данный ресурс существует:
-            final var filePath = Path.of(".", "public", path); // Получаем путь до файла на винте .public + /path
-            final var mimeType = Files.probeContentType(filePath); // Определяем тип файла
-
-            // special case for classic или добавим интерактива
-            if (path.equals("/classic.html")) {
-                final var template = Files.readString(filePath); // Читаем файл в виде строки
-                final var content = template.replace("{time}", LocalDateTime.now().toString()).getBytes(); // Заменяем в нем якорь {time} на то что нам нужно и переводим в байты
-                out.write(("HTTP/1.1 200 OK\r\n" +
-                        "Content-type: " + mimeType + "\r\n" +
-                        "Content-Length: " + content.length + "\r\n" +
-                        "Connection: close\r\n" +
-                        "\r\n").getBytes());
-                out.write(content);
-                out.flush();
-                System.out.printf("Поток %s отправил ответ %n", Thread.currentThread().getName());
-                return;
-            }
-
-            final var length = Files.size(filePath); // Получаем размер файла в байтах, для передачи в Content-Length
-            out.write(("HTTP/1.1 200 OK\r\n" +
-                    "Content-type: " + mimeType + "\r\n" +
-                    "Content-Length: " + length + "\r\n" +
-                    "Connection: close\r\n" +
-                    "\r\n").getBytes());
-            Files.copy(filePath, out); // Копируем файл в выходной поток (отправляем клиенту)
-            out.flush();
-            System.out.printf("Поток %s отправил ответ %n", Thread.currentThread().getName());
-        } catch (IOException ex) {
-            ex.printStackTrace();
         }
     }
 
