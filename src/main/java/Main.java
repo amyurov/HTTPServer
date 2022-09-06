@@ -25,13 +25,13 @@ public class Main {
 
         server.addHandler("POST", "/messages", ((request, out) -> {
             try (out) {
-                out.write(("HTTP/1.1 202 OK\r\n" +
+                out.write(("HTTP/1.1 200 OK\r\n" +
                         "Content-type: " + 0 + "\r\n" +
                         "Content-Length: " + 0 + "\r\n" +
                         "Connection: close\r\n" +
                         "\r\n").getBytes());
                 out.flush();
-
+                System.out.println(Thread.currentThread().getName() + " Ответил на " + request.getMethod() + request.getPath());
             } catch (IOException ex) {
                 ex.printStackTrace();
             }
