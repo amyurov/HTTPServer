@@ -1,6 +1,8 @@
 package HttpServer;
 
+import org.apache.hc.client5.http.utils.URIUtils;
 import org.apache.hc.core5.http.NameValuePair;
+import org.apache.hc.core5.http.message.BasicNameValuePair;
 import org.apache.hc.core5.net.URIBuilder;
 
 import java.io.BufferedInputStream;
@@ -8,6 +10,7 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -73,18 +76,37 @@ public class RequestParser {
 
         // body
         // no body for GET
-        if (!method.equals("GET")) {
-            in.skip(headersDelimiter.length);
-            // Высчитываем content-length, чтобы прочитать body
-            final var contentLength = extractHeader(headers, "Content-Length");
-            if (contentLength.isPresent()) {
-                final var length = Integer.parseInt(contentLength.get());
-                final var bodyBytes = in.readNBytes(length);
-                final var body = new String(bodyBytes);
-                return new Request(method, path, headers, body, query, null);
-            }
+        if (method.equals("GET")) {
+            return new Request(method, path, headers, query);
         }
-        return new Request(method, path, headers, query);
+
+        // Если метод не GET, то метод начинает работу с телом запроса
+        in.skip(headersDelimiter.length);
+        // Высчитываем content-length, чтобы прочитать body
+        final var contentLength = extractHeader(headers, "Content-Length");
+        final var contentType = extractHeader(headers, "Content-Type");
+
+        if (contentLength.isEmpty() && contentType.isEmpty()) {
+            return new Request(method, path, headers, query);
+        }
+
+        final var length = Integer.parseInt(contentLength.get());
+        final var bodyBytes = in.readNBytes(length);
+        final var body = URLDecoder.decode(new String(bodyBytes), Charset.defaultCharset());
+        final var postParams = parseParams(body);
+        return new Request(method, path, headers, body, query, postParams);
+    }
+
+    // String to List<NameValuePair>
+    private static List<NameValuePair> parseParams(String string) {
+        var paramList = new ArrayList<NameValuePair>();
+        var array = string.split("&");
+
+        for (String param : array) {
+            var keyVal = param.split("=");
+            paramList.add(new BasicNameValuePair(keyVal[0], keyVal[1]));
+        }
+        return paramList;
     }
 
     private static Optional<String> extractHeader(List<String> headers, String header) {
