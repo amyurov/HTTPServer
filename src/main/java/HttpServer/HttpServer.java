@@ -10,22 +10,21 @@ import java.util.concurrent.*;
 
 public class HttpServer implements Server {
 
-    private final static List<String> validPath = List.of("/index.html", "/spring.svg", "/spring.png", "/resources.html", "/styles.css",
+    // Не используется здесь, но, в общем случае, думаю, должно быть
+    private final static List<String> VALID_PATH = List.of("/index.html", "/spring.svg", "/spring.png", "/resources.html", "/styles.css",
             "/app.js", "/links.html", "/forms.html", "/classic.html", "/events.html", "/events.js", "/messages.html");
 
-    private final static List<String> allowedMethods = List.of("GET", "POST");
+    private final static List<String> ALLOWED_METHODS = List.of("GET", "POST");
 
-    private final static RequestParser requestParser = new RequestParser(validPath, allowedMethods, 4096);
+    private final static RequestParser requestParser = new RequestParser();
 
     // Хранение хендлеров
     private final ConcurrentHashMap<String, ConcurrentHashMap<String, Handler>> allHandlers = new ConcurrentHashMap<>();
 
-    private final int threadsCount;
     private final ExecutorService threadPool;
 
 
     public HttpServer(int threadsCount) {
-        this.threadsCount = threadsCount;
         threadPool = Executors.newFixedThreadPool(threadsCount);
     }
 
@@ -53,7 +52,7 @@ public class HttpServer implements Server {
                 return;
             }
 
-            var request = requestParser.parse(in);
+            var request = requestParser.parse(in, 4096);
             System.out.println(request);
 
             var handlersMap = allHandlers.get(request.getMethod());
@@ -109,7 +108,7 @@ public class HttpServer implements Server {
             }
 
             final var method = requestLine[0];
-            if (!allowedMethods.contains(method)) {
+            if (!ALLOWED_METHODS.contains(method)) {
                 badRequest(out);
                 return false;
             }
@@ -128,7 +127,7 @@ public class HttpServer implements Server {
         return true;
     }
 
-    private static void badRequest(BufferedOutputStream out) throws IOException {
+    public static void badRequest(BufferedOutputStream out) throws IOException {
         try (out) {
             out.write(("HTTP/1.1 400 Bad Request\r\n" + // Формируем response status line
                     "Content-lenght: 0\r\n" + // Заголовки. Длина тела 0, статус подключения закрыто
@@ -138,7 +137,7 @@ public class HttpServer implements Server {
         }
     }
 
-    private static void notFound(BufferedOutputStream out) throws IOException {
+    public static void notFound(BufferedOutputStream out) throws IOException {
         try (out) {
             out.write(("HTTP/1.1 404 Not Found\r\n" + // Формируем response status line
                     "Content-lenght: 0\r\n" + // Заголовки. Длина тела 0, статус подключения закрыто
@@ -148,7 +147,7 @@ public class HttpServer implements Server {
         }
     }
 
-    private static void ok(BufferedOutputStream out) throws IOException {
+    public static void ok(BufferedOutputStream out) throws IOException {
         try (out) {
             out.write(("HTTP/1.1 200 OK\r\n" +
                     "Content-type: " + 0 + "\r\n" +

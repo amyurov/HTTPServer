@@ -17,22 +17,14 @@ import java.util.*;
 
 public class RequestParser {
 
-    private final List<String> validPath;
-    private final List<String> allowedMethods;
-    private final int bufferLimit;
 
-    public RequestParser(List<String> validPath, List<String> allowedMethods, int bufferLimit) {
-        this.validPath = validPath;
-        this.allowedMethods = allowedMethods;
-        this.bufferLimit = bufferLimit;
+    public RequestParser() {
     }
 
-    public Request parse(BufferedInputStream in) throws IOException, URISyntaxException {
+    public Request parse(BufferedInputStream in, int bufferLimit) throws IOException, URISyntaxException {
 
-        final var limit = bufferLimit;
-
-        in.mark(limit);//Устанавливаем метку вначале потока и ограничиваем кол-во байтов на чтение (пока марка валидна)
-        final var buffer = new byte[limit]; // Инициализируем массив байт в котором будем хранить пришедшие данные (буфер)
+        in.mark(bufferLimit);//Устанавливаем метку вначале потока и ограничиваем кол-во байтов на чтение (пока марка валидна)
+        final var buffer = new byte[bufferLimit]; // Инициализируем массив байт в котором будем хранить пришедшие данные (буфер)
         final var readed = in.read(buffer);
 
         // Ищем индекс где заканчивается requestLine
