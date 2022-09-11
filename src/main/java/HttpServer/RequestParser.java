@@ -65,6 +65,7 @@ public class RequestParser {
         final var contentLength = extractHeader(headers, "Content-Length");
         final var length = Integer.parseInt(contentLength.get());
         final var bodyBytes = in.readNBytes(length);
+        final var body = new String(bodyBytes);
 
         // Content-Type может придти с boundary, нужно их отделить для switch - case
         final var contentTypeHeader = extractHeader(headers, "Content-Type");
@@ -73,9 +74,9 @@ public class RequestParser {
 
         switch (contentType) {
             case "application/x-www-form-urlencoded":
-                final var body = URLDecoder.decode(new String(bodyBytes), Charset.defaultCharset());
-                final var postParams = new ArrayList<>(stringToNameValue(body));
-                return new Request(method, path, headers, query, postParams, null);
+                final var bodyDecoded = URLDecoder.decode(body, Charset.defaultCharset()); // Декодируем тело, чтобы корректно отображалось для x-www-form-urlencoded
+                final var postParams = new ArrayList<>(stringToNameValue(bodyDecoded));
+                return new Request(method, path, headers, query, bodyDecoded, postParams, null);
 
             case "multipart/form-data":
                 DiskFileItemFactory factory = new DiskFileItemFactory();
@@ -95,7 +96,7 @@ public class RequestParser {
                         }
                     }
 
-                    return new Request(method, path, headers, query, parts);
+                    return new Request(method, path, headers, query, body, parts);
                 } catch (Exception e) {
                     e.printStackTrace();
                 }

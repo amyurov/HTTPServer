@@ -27,16 +27,6 @@ public class Request {
         this.parts = null;
     }
 
-    public Request(String method, String path, List<String> headers, List<NameValuePair> query, List<NameValuePair> postParams, List<FileItem> parts) {
-        this.method = method;
-        this.path = path;
-        this.headers = headers;
-        this.query = query;
-        this.body = "Body parsed in postParams";
-        this.postParams = postParams;
-        this.parts = parts;
-    }
-
     public Request(String method, String path, List<String> headers, List<NameValuePair> query, List<FileItem> parts) {
         this.method = method;
         this.path = path;
@@ -44,6 +34,37 @@ public class Request {
         this.query = query;
         this.body = "Body parsed in parts";
         this.postParams = null;
+        this.parts = parts;
+    }
+
+    // Добавил два конструктора, в которых инициализируется body. Чтобы выводилось само тело запроса (как в лекции), а не сообщение о том куда его распарсили
+    public Request(String method, String path, List<String> headers, List<NameValuePair> query, String body, List<NameValuePair> postParams, List<FileItem> parts) {
+        this.method = method;
+        this.path = path;
+        this.headers = headers;
+        this.query = query;
+        this.body = body;
+        this.postParams = postParams;
+        this.parts = parts;
+    }
+
+    public Request(String method, String path, List<String> headers, List<NameValuePair> query, String body, List<FileItem> parts) {
+        this.method = method;
+        this.path = path;
+        this.headers = headers;
+        this.query = query;
+        this.body = body;
+        this.postParams = null;
+        this.parts = parts;
+    }
+
+    public Request(String method, String path, List<String> headers, List<NameValuePair> query, List<NameValuePair> postParams, List<FileItem> parts) {
+        this.method = method;
+        this.path = path;
+        this.headers = headers;
+        this.query = query;
+        this.body = "Body parsed in postParams";
+        this.postParams = postParams;
         this.parts = parts;
     }
 
