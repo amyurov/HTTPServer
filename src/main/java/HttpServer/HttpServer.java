@@ -1,36 +1,28 @@
 package HttpServer;
 
-
-import org.apache.hc.core5.net.URIBuilder;
-
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URISyntaxException;
-import java.nio.charset.Charset;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.*;
 
 public class HttpServer implements Server {
 
-    private final static List<String> validPath = List.of("/index.html", "/spring.svg", "/spring.png", "/resources.html", "/styles.css",
-            "/app.js", "/links.html", "/forms.html", "/classic.html", "/events.html", "/events.js", "/messages.html");
+//    // Тут не используется, но, в частном случае, думаю, должно
+//    private final static List<String> validPath = List.of("/index.html", "/spring.svg", "/spring.png", "/resources.html", "/styles.css",
+//            "/app.js", "/links.html", "/forms.html", "/classic.html", "/events.html", "/events.js", "/messages.html");
 
     private final static List<String> allowedMethods = List.of("GET", "POST");
 
-    private final static RequestParser requestParser = new RequestParser(validPath, allowedMethods, 4096);
+    private final static RequestParser requestParser = new RequestParser(allowedMethods, 4096);
 
     // Хранение хендлеров
     private final ConcurrentHashMap<String, ConcurrentHashMap<String, Handler>> allHandlers = new ConcurrentHashMap<>();
 
-    private final int threadsCount;
     private final ExecutorService threadPool;
 
-
     public HttpServer(int threadsCount) {
-        this.threadsCount = threadsCount;
         threadPool = Executors.newFixedThreadPool(threadsCount);
     }
 
@@ -59,6 +51,9 @@ public class HttpServer implements Server {
                 badRequest(out);
                 return;
             }
+            // Добавил использование геттеров query
+            System.out.println(request.getQueryParams());
+            System.out.println(request.getQueryParam("title"));
 
             System.out.println(request);
 

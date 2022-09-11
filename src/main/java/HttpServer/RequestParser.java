@@ -1,12 +1,10 @@
 package HttpServer;
 
-import org.apache.hc.core5.http.NameValuePair;
 import org.apache.hc.core5.net.URIBuilder;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.net.URISyntaxException;
-import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.List;
@@ -14,12 +12,10 @@ import java.util.Optional;
 
 public class RequestParser {
 
-    private final List<String> validPath;
     private final List<String> allowedMethods;
     private final int bufferLimit;
 
-    public RequestParser(List<String> validPath, List<String> allowedMethods, int bufferLimit) {
-        this.validPath = validPath;
+    public RequestParser(List<String> allowedMethods, int bufferLimit) {
         this.allowedMethods = allowedMethods;
         this.bufferLimit = bufferLimit;
     }
