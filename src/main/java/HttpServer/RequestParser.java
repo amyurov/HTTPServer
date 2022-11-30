@@ -1,63 +1,41 @@
 package HttpServer;
 
-import org.apache.hc.client5.http.utils.URIUtils;
+import org.apache.commons.fileupload.FileItem;
+import org.apache.commons.fileupload.FileUpload;
+import org.apache.commons.fileupload.disk.DiskFileItemFactory;
 import org.apache.hc.core5.http.NameValuePair;
 import org.apache.hc.core5.http.message.BasicNameValuePair;
 import org.apache.hc.core5.net.URIBuilder;
 
 import java.io.BufferedInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 public class RequestParser {
 
-    private final List<String> validPath;
-    private final List<String> allowedMethods;
-    private final int bufferLimit;
 
-    public RequestParser(List<String> validPath, List<String> allowedMethods, int bufferLimit) {
-        this.validPath = validPath;
-        this.allowedMethods = allowedMethods;
-        this.bufferLimit = bufferLimit;
+    public RequestParser() {
     }
 
-    public Request parse(BufferedInputStream in) throws IOException, URISyntaxException {
+    public Request parse(BufferedInputStream in, int bufferLimit) throws IOException, URISyntaxException {
 
-        final var limit = bufferLimit;
-
-        in.mark(limit);//Устанавливаем метку вначале потока и ограничиваем кол-во байтов на чтение (пока марка валидна)
-        final var buffer = new byte[limit]; // Инициализируем массив байт в котором будем хранить пришедшие данные (буфер)
+        in.mark(bufferLimit);//Устанавливаем метку вначале потока и ограничиваем кол-во байтов на чтение (пока марка валидна)
+        final var buffer = new byte[bufferLimit]; // Инициализируем массив байт в котором будем хранить пришедшие данные (буфер)
         final var readed = in.read(buffer);
 
         // Ищем индекс где заканчивается requestLine
         final var requestLineDelimiter = new byte[]{'\r', '\n'};
         final var requestLineEnd = indexOf(buffer, requestLineDelimiter, 0, readed);
-        if (requestLineEnd == -1) {
-            return null;
-        }
 
         // Читаем requestLine
         final var requestLine = new String(Arrays.copyOf(buffer, requestLineEnd)).split("\\s+");
-        if (requestLine.length != 3) {
-            return null;
-        }
-
         final var method = requestLine[0];
-        if (!allowedMethods.contains(method)) {
-            return null;
-        }
-
         final var fullPath = requestLine[1];
         final var path = fullPath.substring(0, fullPath.contains("?") ? fullPath.indexOf('?') : fullPath.indexOf('.'));
-        if (!path.startsWith("/")) {
-            return null;
-        }
 
         // Парсим query
         var uriBuilder = new URIBuilder(fullPath, Charset.defaultCharset());
@@ -80,25 +58,57 @@ public class RequestParser {
             return new Request(method, path, headers, query);
         }
 
-        // Если метод не GET, то метод начинает работу с телом запроса
+        // Если метод не GET, то начинаем работу с телом запроса
         in.skip(headersDelimiter.length);
-        // Высчитываем content-length, чтобы прочитать body
+
+        // Высчитываем content-length и content-type чтобы прочитать body
         final var contentLength = extractHeader(headers, "Content-Length");
-        final var contentType = extractHeader(headers, "Content-Type");
-
-        if (contentLength.isEmpty() && contentType.isEmpty()) {
-            return new Request(method, path, headers, query);
-        }
-
         final var length = Integer.parseInt(contentLength.get());
         final var bodyBytes = in.readNBytes(length);
-        final var body = URLDecoder.decode(new String(bodyBytes), Charset.defaultCharset());
-        final var postParams = parseParams(body);
-        return new Request(method, path, headers, body, query, postParams);
+        final var body = new String(bodyBytes);
+
+        // Content-Type может придти с boundary, нужно их отделить для switch - case
+        final var contentTypeHeader = extractHeader(headers, "Content-Type");
+        final var contentTypeArr = contentTypeHeader.get().split(";");
+        final var contentType = contentTypeArr[0];
+
+        switch (contentType) {
+            case "application/x-www-form-urlencoded":
+                final var bodyDecoded = URLDecoder.decode(body, Charset.defaultCharset()); // Декодируем тело, чтобы корректно отображалось для x-www-form-urlencoded
+                final var postParams = new ArrayList<>(stringToNameValue(bodyDecoded));
+                return new Request(method, path, headers, query, bodyDecoded, postParams, null);
+
+            case "multipart/form-data":
+                DiskFileItemFactory factory = new DiskFileItemFactory();
+                FileUpload upload = new FileUpload(factory);
+                upload.setSizeMax(1_048_576); // Устанавливаем максимальный размер для передаваемых файлов
+                try {
+
+                    //Чтобы не заморачиваться с servlets создаем класс BodyRequestContext реализующий интерфейс RequestContext
+                    // второй аргумент это заголовок "Content-Type" полностью с boundary
+                    List<FileItem> parts = upload.parseRequest(new BodyRequestContext(bodyBytes, contentTypeHeader.get(), length));
+
+                    for (FileItem item : parts) {
+                        if (!item.isFormField()) { // Если не поле формы, значит файл. Записываем в корневую папку
+                            if (item.getName().isEmpty()) continue;
+                            File uploadFile = new File(item.getName());
+                            item.write(uploadFile);
+                        }
+                    }
+
+                    return new Request(method, path, headers, query, body, parts);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+
+            default:
+                break;
+        }
+        return new Request(method, path, headers, query);
     }
 
     // String to List<NameValuePair>
-    private static List<NameValuePair> parseParams(String string) {
+    public static List<NameValuePair> stringToNameValue(String string) {
         var paramList = new ArrayList<NameValuePair>();
         var array = string.split("&");
 
@@ -117,7 +127,7 @@ public class RequestParser {
                 .findFirst();
     }
 
-    private static int indexOf(byte[] array, byte[] target, int start, int max) {
+    public static int indexOf(byte[] array, byte[] target, int start, int max) {
         outer:
         for (int i = start; i <= max - target.length; i++) {
             for (int j = 0; j < target.length; j++) {
